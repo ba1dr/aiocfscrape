@@ -54,13 +54,13 @@ class CloudflareScraper(aiohttp.ClientSession):
         yield from asyncio.sleep(5, loop=self._loop)  # Cloudflare requires a delay before solving the challenge
 
         body = yield from resp.text()
-        parsed_url = urlparse(resp.url)
+        parsed_url = urlparse(str(resp.url))
         domain = parsed_url.netloc
         submit_url = '{}://{}/cdn-cgi/l/chk_jschl'.format(parsed_url.scheme, domain)
 
         params = kwargs.setdefault("params", {})
         headers = kwargs.setdefault("headers", {})
-        headers["Referer"] = resp.url
+        headers["Referer"] = str(resp.url)
 
         try:
             params["jschl_vc"] = re.search(r'name="jschl_vc" value="(\w+)"', body).group(1)
