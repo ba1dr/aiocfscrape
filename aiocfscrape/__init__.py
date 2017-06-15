@@ -38,7 +38,7 @@ class CloudflareScraper(aiohttp.ClientSession):
 
         elif resp.status == 403 and resp.headers.get("Server") == "cloudflare-nginx" and not allow_403:
             resp.close()
-            raise aiohttp.HttpProcessingError(message='CloudFlare returned HTTP 403. Your IP could be banned on CF '
+            raise aiohttp.ClientError(message='CloudFlare returned HTTP 403. Your IP could be banned on CF '
                                                       'or reCAPTCHA appeared. This error can be disabled with '
                                                       'allow_403=True flag in request parameters e.g. '
                                                       'session.get(url, allow_403=True).', headers=resp.headers)
