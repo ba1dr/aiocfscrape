@@ -9,5 +9,5 @@ setup(
     author_email = 'pavlodvornikov@gmail.com',
     url = 'https://github.com/pavlodvornikov/aiocfscrape',
     keywords = ['cloudflare', 'scraping', 'asyncio'],
-    install_requires = ['js2py==0.37', 'aiohttp'] #'aiohttp >= 1.0.5'
+    install_requires = ['js2py', 'aiohttp'] #'aiohttp >= 1.0.5' #js2py==0.37
 )
