@@ -1,3 +1,4 @@
+#if tuple error - TypeError: 'tuple' object does not support item assignment, uncomment the 3 params
 import re
 import random
 import asyncio
@@ -66,6 +67,10 @@ class CloudflareScraper(aiohttp.ClientSession):
         headers = kwargs.setdefault("headers", {})
         headers["Referer"] = str(resp.url)
 
+        data = kwargs.setdefault("data", {})
+        timeout = kwargs.setdefault("timeout", {})
+        proxy = kwargs.setdefault("proxy", {})
+
         try:
             #params["jschl_vc"] = re.search(r'name="jschl_vc" value="(\w+)"', body).group(1)
             #params["pass"] = re.search(r'name="pass" value="(.+?)"', body).group(1)
@@ -89,18 +94,18 @@ class CloudflareScraper(aiohttp.ClientSession):
 
         #params["jschl_answer"] = str(self.solve_challenge(body) + len(domain))
         params += (('jschl_answer', str(self.solve_challenge(body) + len(domain))),)
-        kwargsNew = {}
-        kwargsNew['data'] = kwargs.setdefault("data", {})
-        kwargsNew['timeout'] = kwargs.setdefault("timeout", {})
-        kwargsNew['headers'] = kwargs.setdefault("headers", {})
-        kwargsNew['proxy'] = kwargs.setdefault("proxy", {})
-        kwargsNew['params'] = params
+        kwargs = {}
+        kwargs['data'] = data
+        kwargs['timeout'] = timeout
+        kwargs['headers'] = headers
+        kwargs['proxy'] = proxy
+        kwargs['params'] = params
 
         # Safely evaluate the Javascript expression
         #js = js.replace('return', '')
         #params["jschl_answer"] = str(int(js2py.eval_js(js)) + len(domain))
         resp.close()
-        return (yield from self._request('GET', submit_url, **kwargsNew)) #kwargs
+        return (yield from self._request('GET', submit_url, **kwargs))
 
     def solve_challenge(self, body):
         try:
