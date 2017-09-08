@@ -4,7 +4,7 @@ import asyncio
 import logging
 
 import aiohttp
-import js2py
+import execjs
 
 try:
     from urlparse import urlparse
@@ -14,14 +14,16 @@ except ImportError:
 
 DEFAULT_USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2228.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_5) AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/50.0.2661.102 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/50.0.2661.102 Safari/537.36",
     "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/52.0.2743.116 Safari/537.36",
     "Mozilla/5.0 (Windows NT 6.1; WOW64; rv:46.0) Gecko/20100101 Firefox/46.0",
     "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:41.0) Gecko/20100101 Firefox/41.0"
 ]
 
 DEFAULT_USER_AGENT = random.choice(DEFAULT_USER_AGENTS)
+
+BUG_REPORT = ("Cloudflare may have changed their technique, or there may be a bug in the script.\n\nPlease read " "https://github.com/Anorov/cloudflare-scrape#updates, then file a "
+"bug report at https://github.com/Anorov/cloudflare-scrape/issues.")
 
 
 class CloudflareScraper(aiohttp.ClientSession):
@@ -65,11 +67,13 @@ class CloudflareScraper(aiohttp.ClientSession):
         headers["Referer"] = str(resp.url)
 
         try:
-            params["jschl_vc"] = re.search(r'name="jschl_vc" value="(\w+)"', body).group(1)
-            params["pass"] = re.search(r'name="pass" value="(.+?)"', body).group(1)
+            #params["jschl_vc"] = re.search(r'name="jschl_vc" value="(\w+)"', body).group(1)
+            #params["pass"] = re.search(r'name="pass" value="(.+?)"', body).group(1)
+            params += (('jschl_vc', re.search(r'name="jschl_vc" value="(\w+)"', body).group(1)),)
+            params += (('pass', re.search(r'name="pass" value="(.+?)"', body).group(1)),)
 
             # Extract the arithmetic operation
-            js = self.extract_js(body)
+            #js = self.extract_js(body)
 
         except Exception:
             # Something is wrong with the page.
@@ -83,15 +87,28 @@ class CloudflareScraper(aiohttp.ClientSession):
                           "before submitting a bug report.")
             raise
 
-        # Safely evaluate the Javascript expression
-        js = js.replace('return', '')
-        params["jschl_answer"] = str(int(js2py.eval_js(js)) + len(domain))
-        resp.close()
-        return (yield from self._request('GET', submit_url, **kwargs))
+        #params["jschl_answer"] = str(self.solve_challenge(body) + len(domain))
+        params += (('jschl_answer', str(self.solve_challenge(body) + len(domain))),)
+        kwargsNew = {}
+        kwargsNew['data'] = kwargs.setdefault("data", {})
+        kwargsNew['timeout'] = kwargs.setdefault("timeout", {})
+        kwargsNew['headers'] = kwargs.setdefault("headers", {})
+        kwargsNew['proxy'] = kwargs.setdefault("proxy", {})
+        kwargsNew['params'] = params
 
-    def extract_js(self, body):
-        js = re.search(r"setTimeout\(function\(\){\s+(var "
-                       "s,t,o,p,b,r,e,a,k,i,n,g,f.+?\r?\n[\s\S]+?a\.value =.+?)\r?\n", body).group(1)
+        # Safely evaluate the Javascript expression
+        #js = js.replace('return', '')
+        #params["jschl_answer"] = str(int(js2py.eval_js(js)) + len(domain))
+        resp.close()
+        return (yield from self._request('GET', submit_url, **kwargsNew)) #kwargs
+
+    def solve_challenge(self, body):
+        try:
+            js = re.search(r"setTimeout\(function\(\){\s+(var "
+                        "s,t,o,p,b,r,e,a,k,i,n,g,f.+?\r?\n[\s\S]+?a\.value =.+?)\r?\n", body).group(1)
+        except Exception:
+            raise ValueError("Unable to identify Cloudflare IUAM Javascript on website. %s" % BUG_REPORT)
+
         js = re.sub(r"a\.value = (parseInt\(.+?\)).+", r"\1", js)
         js = re.sub(r"\s{3,}[a-z](?: = |\.).+", "", js)
 
@@ -99,4 +116,28 @@ class CloudflareScraper(aiohttp.ClientSession):
         # These characters are not currently used in Cloudflare's arithmetic snippet
         js = re.sub(r"[\n\\']", "", js)
 
-        return js.replace("parseInt", "return parseInt")
+        if "parseInt" not in js:
+            raise ValueError("Error parsing Cloudflare IUAM Javascript challenge. %s" % BUG_REPORT)
+
+        # Use vm.runInNewContext to safely evaluate code
+        # The sandboxed code cannot use the Node.js standard library
+        js = "return require('vm').runInNewContext('%s', Object.create(null), {timeout: 5000});" % js
+
+        try:
+            node = execjs.get("Node")
+        except Exception:
+            raise EnvironmentError("Missing Node.js runtime. Node is required. Please read the cfscrape"
+                " README's Dependencies section: https://github.com/Anorov/cloudflare-scrape#dependencies.")
+
+        try:
+            result = node.exec_(js)
+        except Exception:
+            logging.error("Error executing Cloudflare IUAM Javascript. %s" % BUG_REPORT)
+            raise
+
+        try:
+            result = int(result)
+        except Exception:
+            raise ValueError("Cloudflare IUAM challenge returned unexpected value. %s" % BUG_REPORT)
+
+        return result
